@@ -38,6 +38,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const [text, setText] = useState("")
+  const [messageSearch, setMessageSearch] = useState("")
   const router = useRouter()
   const { theme, toggleTheme } = useTheme()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -166,6 +167,10 @@ useEffect(() => {
     router.push("/login")
   }
 
+  const filteredMessages = messages.filter((m) =>
+  m.text.toLowerCase().includes(messageSearch.toLowerCase())
+)
+
   const filtered = contacts.filter(
     (c) =>
       c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -264,18 +269,24 @@ useEffect(() => {
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-3 p-4 border-b border-border-subtle">
+           <div className="flex items-center gap-3 p-4 border-b border-border-subtle">
               <div className="w-9 h-9 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center font-display font-bold text-accent text-sm">
                 {selected.name.charAt(0).toUpperCase()}
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="font-medium text-sm">{selected.name}</p>
                 <p className="text-xs text-muted">{selected.email}</p>
               </div>
+              <input
+                type="text"
+                placeholder="Search messages"
+                value={messageSearch}
+                onChange={(e) => setMessageSearch(e.target.value)}
+                className="w-40 px-3 py-1.5 rounded-lg bg-surface border border-border-subtle text-xs placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent transition"
+              />
             </div>
-
             <div className="flex-1 overflow-y-auto p-6 space-y-2">
-              {messages.map((m) => (
+              {filteredMessages.map((m) => (
                 <div key={m.id} className={`group relative w-fit ${m.senderId === user.uid ? "ml-auto" : "mr-auto"}`}>
                   <div
                     className={`max-w-[280px] px-4 py-2 rounded-2xl text-sm ${
