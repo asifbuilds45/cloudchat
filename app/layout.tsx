@@ -16,6 +16,12 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "CloudChat",
   description: "Cloud-based chat application",
+  manifest: "/manifest.json",
+  themeColor: "#2F6FED",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export default function RootLayout({
