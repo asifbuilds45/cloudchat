@@ -35,6 +35,8 @@ interface Message {
   senderId: string
   createdAt: any
   read: boolean
+  type?: "text" | "voice"
+  audioData?: string
 }
 
 export default function ChatPage() {
@@ -46,6 +48,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const [text, setText] = useState("")
+  const [isRecording, setIsRecording] = useState(false)
+const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+const audioChunksRef = useRef<Blob[]>([])
   const [messageSearch, setMessageSearch] = useState("")
   const router = useRouter()
   const { theme, toggleTheme } = useTheme()
@@ -179,6 +184,53 @@ useEffect(() => {
     })
     setText("")
   }
+
+  const startRecording = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const recorder = new MediaRecorder(stream)
+    audioChunksRef.current = []
+
+    recorder.ondataavailable = (e) => {
+      audioChunksRef.current.push(e.data)
+    }
+
+    recorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
+      const reader = new FileReader()
+      reader.onloadend = async () => {
+        const base64Audio = reader.result as string
+        if (base64Audio.length > 900000) {
+          alert("Recording too long! Keep it under ~8 seconds.")
+          return
+        }
+        if (!user || !selected) return
+        const rId = roomId(user.uid, selected.id)
+        await addDoc(collection(db, "chats", rId, "messages"), {
+          text: "",
+          type: "voice",
+          audioData: base64Audio,
+          senderId: user.uid,
+          createdAt: serverTimestamp(),
+          read: false,
+        })
+      }
+      reader.readAsDataURL(audioBlob)
+      stream.getTracks().forEach((track) => track.stop())
+    }
+
+    recorder.start()
+    mediaRecorderRef.current = recorder
+    setIsRecording(true)
+  } catch (err) {
+    alert("Microphone access denied or unavailable.")
+  }
+}
+
+const stopRecording = () => {
+  mediaRecorderRef.current?.stop()
+  setIsRecording(false)
+}
 
   const handleDelete = async (messageId: string) => {
     if (!user || !selected) return
@@ -343,7 +395,11 @@ useEffect(() => {
                         : "bg-surface-2 rounded-bl-sm"
                     }`}
                   >
-                    {m.text}
+                    {m.type === "voice" ? (
+                      <audio controls src={m.audioData} className="max-w-[220px] h-8" />
+                    ) : (
+                      m.text
+                    )}
                   </div>
                   <div className="flex items-center gap-2 justify-end mt-0.5 pr-1">
                     {m.senderId === user.uid && (
@@ -372,6 +428,14 @@ useEffect(() => {
                 placeholder="Type a message..."
                 className="flex-1 px-4 py-3 rounded-xl bg-surface border border-border-subtle text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent transition"
               />
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`px-4 rounded-xl transition ${
+                  isRecording ? "bg-red-500 text-white animate-pulse" : "bg-surface border border-border-subtle hover:bg-surface-2"
+                }`}
+              >
+                {isRecording ? "⏹" : "🎤"}
+              </button>
               <button
                 onClick={handleSend}
                 className="bg-accent text-white px-5 rounded-xl hover:opacity-90 active:scale-[0.98] transition"
