@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState, useRef } from "react"
+import { onSnapshot as onSnap2 } from "firebase/firestore"
 import { useTheme } from "@/lib/useTheme"
 import { doc, updateDoc, writeBatch, deleteDoc, setDoc, serverTimestamp as fsTimestamp } from "firebase/firestore"
 import { auth } from "@/lib/firebase"
@@ -22,6 +23,12 @@ interface Contact {
   email: string
   online?: boolean
 }
+
+interface Group {
+  id: string
+  name: string
+}
+
 interface Message {
   id: string
   text: string
@@ -33,6 +40,7 @@ interface Message {
 export default function ChatPage() {
   const [user, setUser] = useState<User | null>(null)
   const [contacts, setContacts] = useState<Contact[]>([])
+  const [groups, setGroups] = useState<Group[]>([])
   const [search, setSearch] = useState("")
   const [selected, setSelected] = useState<Contact | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -81,6 +89,22 @@ export default function ChatPage() {
       unsubscribe()
     }
   }, [router])
+
+  useEffect(() => {
+    if (!user) return
+    const q = query(collection(db, "groups"))
+    const unsub = onSnapshot(q, (snap) => {
+      const list: Group[] = []
+      snap.forEach((d) => {
+        const data = d.data()
+        if (data.members?.includes(user.uid)) {
+          list.push({ id: d.id, name: data.name })
+        }
+      })
+      setGroups(list)
+    })
+    return () => unsub()
+  }, [user])
 
   useEffect(() => {
     if (!user || contacts.length === 0) return
@@ -210,7 +234,7 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="p-3 border-b border-border-subtle">
+        <div className="p-3 border-b border-border-subtle space-y-2">
           <input
             type="text"
             placeholder="Search contacts"
@@ -218,9 +242,33 @@ useEffect(() => {
             onChange={(e) => setSearch(e.target.value)}
             className="w-full px-3 py-2 rounded-lg bg-surface border border-border-subtle text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent transition"
           />
+          <button
+            onClick={() => router.push("/group/new")}
+            className="w-full text-xs text-accent hover:opacity-80 transition text-left px-1"
+          >
+            + New Group
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
+          {groups.length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase text-muted px-4 pt-3 pb-1 tracking-wide">Groups</p>
+              {groups.map((g) => (
+                <div
+                  key={g.id}
+                  onClick={() => router.push(`/group/${g.id}`)}
+                  className="flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-border-subtle/50 hover:bg-surface transition"
+                >
+                  <div className="w-10 h-10 rounded-full bg-accent-2/20 border border-accent-2/30 flex items-center justify-center font-display font-bold text-accent-2 text-sm shrink-0">
+                    {g.name.charAt(0).toUpperCase()}
+                  </div>
+                  <p className="font-medium text-sm truncate">{g.name}</p>
+                </div>
+              ))}
+              <p className="text-[10px] uppercase text-muted px-4 pt-3 pb-1 tracking-wide">Contacts</p>
+            </div>
+          )}
           {filtered.length === 0 && (
             <p className="text-muted text-sm text-center py-8">No contacts found</p>
           )}
