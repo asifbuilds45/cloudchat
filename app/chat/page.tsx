@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState, useRef } from "react"
+import { useTheme } from "@/lib/useTheme"
 import { doc, updateDoc, writeBatch, deleteDoc, setDoc, serverTimestamp as fsTimestamp } from "firebase/firestore"
 import { auth } from "@/lib/firebase"
 import { db } from "@/lib/firestore"
@@ -38,6 +39,7 @@ export default function ChatPage() {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const [text, setText] = useState("")
   const router = useRouter()
+  const { theme, toggleTheme } = useTheme()
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const roomId = (a: string, b: string) => [a, b].sort().join("_")
@@ -186,15 +188,20 @@ useEffect(() => {
             <h1 className="font-display font-bold">CloudChat</h1>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push("/profile")} className="text-xs text-muted hover:text-foreground transition">
-  Profile
-</button>
-<button onClick={() => router.push("/admin")} className="text-xs text-muted hover:text-foreground transition">
-  Analytics
-</button>
-<button onClick={handleLogout} className="text-xs text-muted hover:text-foreground transition">
-  Logout
-</button>
+            <div className="flex items-center gap-3">
+  <button onClick={toggleTheme} className="text-xs text-muted hover:text-foreground transition">
+    {theme === "dark" ? "Light" : "Dark"} mode
+  </button>
+  <button onClick={() => router.push("/profile")} className="text-xs text-muted hover:text-foreground transition">
+    Profile
+  </button>
+  <button onClick={() => router.push("/admin")} className="text-xs text-muted hover:text-foreground transition">
+    Analytics
+  </button>
+  <button onClick={handleLogout} className="text-xs text-muted hover:text-foreground transition">
+    Logout
+  </button>
+</div>
           </div>
         </div>
 
