@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState, useRef } from "react"
+import emailjs from "@emailjs/browser"
 import { onSnapshot as onSnap2 } from "firebase/firestore"
 import { useTheme } from "@/lib/useTheme"
 import { doc, updateDoc, writeBatch, deleteDoc, setDoc, serverTimestamp as fsTimestamp } from "firebase/firestore"
@@ -174,17 +175,34 @@ useEffect(() => {
   }, [messages])
 
   const handleSend = async () => {
-    if (!text.trim() || !user || !selected) return
-    const rId = roomId(user.uid, selected.id)
-    await addDoc(collection(db, "chats", rId, "messages"), {
-      text,
-      senderId: user.uid,
-      createdAt: serverTimestamp(),
-      read: false,
-    })
-    setText("")
+  if (!text.trim() || !user || !selected) return
+  const rId = roomId(user.uid, selected.id)
+  await addDoc(collection(db, "chats", rId, "messages"), {
+    text,
+    senderId: user.uid,
+    createdAt: serverTimestamp(),
+    read: false,
+  })
+
+  // Send email notification
+  try {
+    await emailjs.send(
+      "service_d7qb6lo",
+      "template_xfs4bpp",
+      {
+        to_email: selected.email,
+        to_name: selected.name,
+        sender_name: user.email,
+        message: text,
+      },
+      "yBb4tBlbj2ImQpIfa"
+    )
+  } catch (err) {
+    console.error("Email notification failed:", err)
   }
 
+  setText("")
+}
   const startRecording = async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
