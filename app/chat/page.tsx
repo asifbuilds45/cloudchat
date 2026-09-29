@@ -1,9 +1,7 @@
 "use client"
 import { useEffect, useState, useRef } from "react"
 import emailjs from "@emailjs/browser"
-import { onSnapshot as onSnap2 } from "firebase/firestore"
 import { useTheme } from "@/lib/useTheme"
-import { doc, updateDoc, writeBatch, deleteDoc, setDoc, serverTimestamp as fsTimestamp } from "firebase/firestore"
 import { auth } from "@/lib/firebase"
 import { db } from "@/lib/firestore"
 import {
@@ -11,9 +9,16 @@ import {
   getDocs,
   addDoc,
   query,
+  where,
   orderBy,
   onSnapshot,
   serverTimestamp,
+  serverTimestamp as fsTimestamp,
+  doc,
+  updateDoc,
+  writeBatch,
+  deleteDoc,
+  setDoc,
 } from "firebase/firestore"
 import { onAuthStateChanged, signOut, User } from "firebase/auth"
 import { useRouter } from "next/navigation"
@@ -50,8 +55,8 @@ export default function ChatPage() {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
   const [text, setText] = useState("")
   const [isRecording, setIsRecording] = useState(false)
-const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-const audioChunksRef = useRef<Blob[]>([])
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
   const [messageSearch, setMessageSearch] = useState("")
   const router = useRouter()
   const { theme, toggleTheme } = useTheme()
@@ -67,15 +72,12 @@ const audioChunksRef = useRef<Blob[]>([])
       }
       setUser(currentUser)
 
-      // Mark online
       await setDoc(doc(db, "users", currentUser.uid), { online: true, lastSeen: fsTimestamp() }, { merge: true })
 
-      // Heartbeat every 30s
       const heartbeat = setInterval(() => {
         setDoc(doc(db, "users", currentUser.uid), { online: true, lastSeen: fsTimestamp() }, { merge: true })
       }, 30000)
 
-      // Mark offline on tab close
       const handleUnload = () => {
         setDoc(doc(db, "users", currentUser.uid), { online: false, lastSeen: fsTimestamp() }, { merge: true })
       }
@@ -83,7 +85,7 @@ const audioChunksRef = useRef<Blob[]>([])
 
       const snap = await getDocs(collection(db, "users"))
       const list: Contact[] = []
-     snap.forEach((d) => {
+      snap.forEach((d) => {
         if (d.id !== currentUser.uid) {
           const data = d.data()
           list.push({ id: d.id, name: data.name || "Unnamed", email: data.email, online: data.online || false })
@@ -98,14 +100,12 @@ const audioChunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
     if (!user) return
-    const q = query(collection(db, "groups"))
+    const q = query(collection(db, "groups"), where("members", "array-contains", user.uid))
     const unsub = onSnapshot(q, (snap) => {
       const list: Group[] = []
       snap.forEach((d) => {
         const data = d.data()
-        if (data.members?.includes(user.uid)) {
-          list.push({ id: d.id, name: data.name })
-        }
+        list.push({ id: d.id, name: data.name })
       })
       setGroups(list)
     })
@@ -133,7 +133,7 @@ const audioChunksRef = useRef<Blob[]>([])
     return () => unsubscribers.forEach((u) => u())
   }, [user, contacts])
 
-useEffect(() => {
+  useEffect(() => {
     if (contacts.length === 0) return
     const unsubscribers = contacts.map((c) =>
       onSnapshot(doc(db, "users", c.id), (snap) => {
@@ -175,80 +175,80 @@ useEffect(() => {
   }, [messages])
 
   const handleSend = async () => {
-  if (!text.trim() || !user || !selected) return
-  const rId = roomId(user.uid, selected.id)
-  await addDoc(collection(db, "chats", rId, "messages"), {
-    text,
-    senderId: user.uid,
-    createdAt: serverTimestamp(),
-    read: false,
-  })
+    if (!text.trim() || !user || !selected) return
+    const rId = roomId(user.uid, selected.id)
+    await addDoc(collection(db, "chats", rId, "messages"), {
+      text,
+      senderId: user.uid,
+      createdAt: serverTimestamp(),
+      read: false,
+    })
 
-  // Send email notification
-  try {
-    await emailjs.send(
-      "service_d7qb6lo",
-      "template_xfs4bpp",
-      {
-        to_email: selected.email,
-        to_name: selected.name,
-        sender_name: user.email,
-        message: text,
-      },
-      "yBb4tBlbj2ImQpIfa"
-    )
-  } catch (err) {
-    console.error("Email notification failed:", err)
+    try {
+      await emailjs.send(
+        "service_d7qb6lo",
+        "template_xfs4bpp",
+        {
+          to_email: selected.email,
+          to_name: selected.name,
+          sender_name: user.email,
+          message: text,
+        },
+        "yBb4tBlbj2ImQpIfa"
+      )
+    } catch (err) {
+      console.error("Email notification failed:", err)
+    }
+
+    setText("")
   }
 
-  setText("")
-}
   const startRecording = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const recorder = new MediaRecorder(stream)
-    audioChunksRef.current = []
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      audioChunksRef.current = []
 
-    recorder.ondataavailable = (e) => {
-      audioChunksRef.current.push(e.data)
-    }
-
-    recorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
-      const reader = new FileReader()
-      reader.onloadend = async () => {
-        const base64Audio = reader.result as string
-        if (base64Audio.length > 900000) {
-          alert("Recording too long! Keep it under ~8 seconds.")
-          return
-        }
-        if (!user || !selected) return
-        const rId = roomId(user.uid, selected.id)
-        await addDoc(collection(db, "chats", rId, "messages"), {
-          text: "",
-          type: "voice",
-          audioData: base64Audio,
-          senderId: user.uid,
-          createdAt: serverTimestamp(),
-          read: false,
-        })
+      recorder.ondataavailable = (e) => {
+        audioChunksRef.current.push(e.data)
       }
-      reader.readAsDataURL(audioBlob)
-      stream.getTracks().forEach((track) => track.stop())
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" })
+        const reader = new FileReader()
+        reader.onloadend = async () => {
+          const base64Audio = reader.result as string
+          if (base64Audio.length > 900000) {
+            alert("Recording too long! Keep it under ~8 seconds.")
+            return
+          }
+          if (!user || !selected) return
+          const rId = roomId(user.uid, selected.id)
+          await addDoc(collection(db, "chats", rId, "messages"), {
+            text: "",
+            type: "voice",
+            audioData: base64Audio,
+            senderId: user.uid,
+            createdAt: serverTimestamp(),
+            read: false,
+          })
+        }
+        reader.readAsDataURL(audioBlob)
+        stream.getTracks().forEach((track) => track.stop())
+      }
+
+      recorder.start()
+      mediaRecorderRef.current = recorder
+      setIsRecording(true)
+    } catch (err) {
+      alert("Microphone access denied or unavailable.")
     }
-
-    recorder.start()
-    mediaRecorderRef.current = recorder
-    setIsRecording(true)
-  } catch (err) {
-    alert("Microphone access denied or unavailable.")
   }
-}
 
-const stopRecording = () => {
-  mediaRecorderRef.current?.stop()
-  setIsRecording(false)
-}
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop()
+    setIsRecording(false)
+  }
 
   const handleDelete = async (messageId: string) => {
     if (!user || !selected) return
@@ -262,8 +262,8 @@ const stopRecording = () => {
   }
 
   const filteredMessages = messages.filter((m) =>
-  m.text.toLowerCase().includes(messageSearch.toLowerCase())
-)
+    m.text.toLowerCase().includes(messageSearch.toLowerCase())
+  )
 
   const filtered = contacts.filter(
     (c) =>
@@ -275,7 +275,6 @@ const stopRecording = () => {
 
   return (
     <div className="h-screen bg-background text-foreground flex overflow-hidden">
-      {/* Sidebar */}
       <div className="w-[340px] shrink-0 border-r border-border-subtle flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border-subtle">
           <div className="flex items-center gap-2">
@@ -287,20 +286,18 @@ const stopRecording = () => {
             <h1 className="font-display font-bold">CloudChat</h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-3">
-  <button onClick={toggleTheme} className="text-xs text-muted hover:text-foreground transition">
-    {theme === "dark" ? "Light" : "Dark"} mode
-  </button>
-  <button onClick={() => router.push("/profile")} className="text-xs text-muted hover:text-foreground transition">
-    Profile
-  </button>
-  <button onClick={() => router.push("/admin")} className="text-xs text-muted hover:text-foreground transition">
-    Analytics
-  </button>
-  <button onClick={handleLogout} className="text-xs text-muted hover:text-foreground transition">
-    Logout
-  </button>
-</div>
+            <button onClick={toggleTheme} className="text-xs text-muted hover:text-foreground transition">
+              {theme === "dark" ? "Light" : "Dark"} mode
+            </button>
+            <button onClick={() => router.push("/profile")} className="text-xs text-muted hover:text-foreground transition">
+              Profile
+            </button>
+            <button onClick={() => router.push("/admin")} className="text-xs text-muted hover:text-foreground transition">
+              Analytics
+            </button>
+            <button onClick={handleLogout} className="text-xs text-muted hover:text-foreground transition">
+              Logout
+            </button>
           </div>
         </div>
 
@@ -372,7 +369,6 @@ const stopRecording = () => {
         </div>
       </div>
 
-      {/* Chat panel */}
       <div className="flex-1 flex flex-col">
         {!selected ? (
           <div className="flex-1 flex items-center justify-center">
@@ -387,7 +383,7 @@ const stopRecording = () => {
           </div>
         ) : (
           <>
-           <div className="flex items-center gap-3 p-4 border-b border-border-subtle">
+            <div className="flex items-center gap-3 p-4 border-b border-border-subtle">
               <div className="w-9 h-9 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center font-display font-bold text-accent text-sm">
                 {selected.name.charAt(0).toUpperCase()}
               </div>
